@@ -21,6 +21,7 @@ import jsonlines
 from utils.claude_interface import ClaudeCodeInterface
 from utils.codex_interface import CodexCodeInterface
 from utils.gemini_interface import GeminiCodeInterface
+from utils.router_interface import RouterCodeInterface
 from utils.prompt_formatter import PromptFormatter
 from utils.patch_extractor import PatchExtractor
 from utils.model_registry import get_model_name
@@ -40,6 +41,8 @@ class CodeSWEAgent:
             self.interface = CodexCodeInterface()
         elif self.backend == "gemini":
             self.interface = GeminiCodeInterface()
+        elif self.backend == "router":
+            self.interface = RouterCodeInterface()
         else:
             self.backend = "claude"
             self.interface = ClaudeCodeInterface()
@@ -270,7 +273,7 @@ def main():
                        help="Path to custom prompt template")
     parser.add_argument("--model", type=str,
                        help="Model to use (e.g., opus-4.1, codex-4.2, or any name)")
-    parser.add_argument("--backend", type=str, choices=["claude", "codex", "gemini"],
+    parser.add_argument("--backend", type=str, choices=["claude", "codex", "gemini", "router"],
                        help="Code model backend to use")
     
     args = parser.parse_args()
@@ -282,13 +285,18 @@ def main():
         cli_cmd = "codex"
     elif backend == "gemini":
         cli_cmd = "gemini"
+    elif backend == "router":
+        cli_cmd = "ccr"
     else:
         cli_cmd = "claude"
 
     try:
-        result = subprocess.run([cli_cmd, "--version"], capture_output=True, text=True)
+        if backend == "router":
+            result = subprocess.run([cli_cmd, "-v"], capture_output=True, text=True)
+        else:
+            result = subprocess.run([cli_cmd, "--version"], capture_output=True, text=True)
         if result.returncode != 0:
-            print(f"Error: {cli_cmd} CLI not found. Please ensure '{cli_cmd}' is installed and in PATH")
+            print(f"Error: {cli_cmd} CLI not found or returned error. Stderr: {result.stderr}")
             sys.exit(1)
     except FileNotFoundError:
         print(f"Error: {cli_cmd} CLI not found. Please ensure '{cli_cmd}' is installed and in PATH")

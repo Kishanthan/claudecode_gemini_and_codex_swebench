@@ -175,6 +175,9 @@ def get_model_name(alias: str, backend: str = "claude") -> str:
         models = CODEX_MODELS
     elif backend == "gemini":
         models = GEMINI_MODELS
+    elif backend == "router":
+        # Router expects provider,model strings; pass through unchanged
+        return alias
     else:
         models = CLAUDE_MODELS
 
@@ -194,6 +197,11 @@ def list_models(backend: str = "claude") -> str:
         categories = GEMINI_CATEGORIES
         descriptions = GEMINI_DESCRIPTIONS
         title = "Available Gemini Models"
+    elif backend == "router":
+        return (
+            "Router backend uses claude-code-router configured models.\n"
+            "Set provider,model pairs in your router config and pass them via --model (e.g., --model openrouter,anthropic/claude-3.5-sonnet).\n"
+        )
     else:
         categories = CLAUDE_CATEGORIES
         descriptions = CLAUDE_DESCRIPTIONS
