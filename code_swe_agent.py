@@ -145,7 +145,8 @@ class CodeSWEAgent:
 
             model_info = f" with model {self.model_alias}" if self.model else ""
             print(f"Running {self.backend.title()} Code{model_info}...")
-            result = self.interface.execute_code_cli(prompt, repo_path, self.model)
+            trajectory_name = instance_id
+            result = self.interface.execute_code_cli(prompt, repo_path, self.model, trajectory_name=trajectory_name)
 
             if not result["success"]:
                 print(f"{self.backend.title()} Code execution failed: {result['stderr']}")
