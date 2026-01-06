@@ -80,7 +80,11 @@ class RouterCodeInterface:
 
             traj_name = trajectory_name or os.environ.get("ROUTER_TRAJECTORY_NAME", "").strip() or None
 
-            cmd = ["ccr", "code", "--print", *extra_flags]
+            trace_args: List[str] = []
+            trace_log_name = traj_name or "trace"
+            trace_args = ["--trace", "--trace-log", trace_log_name]
+
+            cmd = ["ccr", "code", "--print", *trace_args, *extra_flags]
 
             # Default time/iteration limits. Add retries on timeout.
             timeout_s = _get_int_env("ROUTER_TIMEOUT_SECONDS", DEFAULT_ROUTER_TIMEOUT_SECONDS)
@@ -142,6 +146,7 @@ class RouterCodeInterface:
                 def _discover_session_file() -> Optional[Path]:
                     if not trajectories_dir.exists():
                         return None
+                    glob_pattern = f"{traj_name}*session-*.jsonl" if traj_name else "*session-*.jsonl"
                     candidates = [p for p in trajectories_dir.glob(glob_pattern) if p.name not in existing_sessions]
                     if not candidates:
                         all_sessions = list(trajectories_dir.glob(glob_pattern))

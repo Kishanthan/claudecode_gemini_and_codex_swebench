@@ -150,13 +150,13 @@ class CodeSWEAgent:
 
             if not result["success"]:
                 print(f"{self.backend.title()} Code execution failed: {result['stderr']}")
-                os.chdir(original_dir)
-                return {
-                    "instance_id": instance_id,
-                    "model": self.model_alias or f"{self.backend}-code",
-                    "prediction": "",
-                    "error": f"Execution failed: {result['stderr']}",
-                }
+                # os.chdir(original_dir)
+                # return {
+                #     "instance_id": instance_id,
+                #     "model": self.model_alias or f"{self.backend}-code",
+                #     "prediction": "",
+                #     "error": f"Execution failed: {result['stderr']}",
+                # }
 
             patch = self.patch_extractor.extract_from_cli_output(result["stdout"], repo_path)
 

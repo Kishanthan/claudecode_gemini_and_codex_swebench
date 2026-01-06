@@ -365,14 +365,17 @@ def main():
     if args.file:
         # Specific file
         file_path = Path(args.file)
+        # Normalize to absolute path under base dir if relative was provided
+        if not file_path.is_absolute():
+            file_path = (evaluator.base_dir / file_path).resolve()
         if not file_path.exists():
-            # Try in predictions directory
-            file_path = evaluator.predictions_dir / args.file
+            # Try in predictions directory (support callers that pass just the filename)
+            file_path = (evaluator.predictions_dir / Path(args.file).name).resolve()
         
         if file_path.exists():
             # Find in list
             for f, t, c in all_files:
-                if f == file_path:
+                if f.resolve() == file_path:
                     selected_files = [(f, t, c)]
                     break
         else:
