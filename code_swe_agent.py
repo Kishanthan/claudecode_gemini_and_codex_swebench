@@ -66,59 +66,64 @@ class CodeSWEAgent:
     def setup_repository(self, instance: Dict) -> Optional[str]:
         """Set up a repository for testing."""
         instance_id = instance["instance_id"]
-        repo_name = instance["repo"]
-        base_commit = instance["base_commit"]
 
-        # Create temporary directory for this instance (cross-platform)
-        temp_dir = Path(tempfile.gettempdir()) / f"swe_bench_{instance_id}"
-
+        # Try to materialize prebuilt SWE-bench testbed into a writable staging dir (host-mounted).
+        prebuilt_root = Path(os.environ.get("SWEB_TESTBED_DIR", "/tmp/testbed_host"))
+        prebuilt_path = prebuilt_root / f"{instance_id}"
         try:
-            # Remove if exists
-            if temp_dir.exists():
-                shutil.rmtree(temp_dir)
-
-            # Save current directory
-            original_dir = Path.cwd()
-            
-            # Clone repository
-            print(f"Cloning {repo_name} to {temp_dir}")
-            clone_url = f"https://github.com/{repo_name}.git"
-            
-            result = subprocess.run(
-                ["git", "clone", clone_url, str(temp_dir)],
-                capture_output=True,
-                text=True,
-                cwd=str(original_dir)  # Ensure we're in a valid directory
-            )
-            
-            if result.returncode != 0:
-                print(f"Failed to clone repository: {result.stderr}")
-                return None
-                
-            # Checkout base commit
-            os.chdir(temp_dir)
-            result = subprocess.run(
-                ["git", "checkout", base_commit],
-                capture_output=True,
-                text=True
-            )
-            
-            if result.returncode != 0:
-                print(f"Failed to checkout commit: {result.stderr}")
-                os.chdir(str(original_dir))  # Return to original directory
-                return None
-
-            os.chdir(str(original_dir))  # Return to original directory
-            return str(temp_dir)
-            
+            if prebuilt_path.exists():
+                shutil.rmtree(prebuilt_path)
+            prebuilt_path.mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            print(f"Error setting up repository: {e}")
-            # Try to return to original directory if possible
-            try:
-                os.chdir(str(original_dir))
-            except Exception as chdir_error:
-                print(f"Warning: Failed to return to original directory: {chdir_error}")
+            print(f"Failed to prepare testbed directory {prebuilt_path}: {e}")
             return None
+
+        iid = instance.get("instance_id", "")
+        if "__" in iid:
+            org, rest = iid.split("__", 1)
+            swe_image = f"swebench/sweb.eval.x86_64.{org}_1776_{rest}"
+        else:
+            print(f"Could not parse instance_id '{iid}' for SWE image name.")
+            return None
+
+        # Use docker binary from PATH (expected to be bind-mounted into the container).
+        docker_bin = "docker"
+
+        def copy_from_image(src: str, dest: Path, label: str) -> bool:
+            try:
+                dest.mkdir(parents=True, exist_ok=True)
+                stream_cmd = [docker_bin, "run", "--rm", swe_image, "tar", "-C", src, "-cf", "-", "."]
+                extract_cmd = ["tar", "-C", str(dest), "-xf", "-"]
+                with subprocess.Popen(stream_cmd, stdout=subprocess.PIPE) as proc_in:
+                    result = subprocess.run(
+                        extract_cmd,
+                        stdin=proc_in.stdout,
+                        capture_output=True,
+                        text=True,
+                        timeout=300,
+                    )
+                    if proc_in.wait() != 0:
+                        err = proc_in.stderr.read() if proc_in.stderr else ""
+                        print(f"Failed to stream {label} from {swe_image}: {err}")
+                        return False
+                    if result.returncode != 0:
+                        print(f"Failed to extract {label} for {swe_image}: {result.stderr.strip()}")
+                        return False
+                return True
+            except Exception as e:
+                print(f"Error running docker cmd to copy {label}: {e}")
+                return False
+
+        if not copy_from_image("/testbed", prebuilt_path, "testbed"):
+            return None
+
+        # Confirm contents exist
+        if not any(prebuilt_path.iterdir()):
+            print(f"{prebuilt_path} is empty after copying from {swe_image}")
+            return None
+
+        instance["repo_path"] = str(prebuilt_path)
+        return str(prebuilt_path)
             
     def process_instance(self, instance: Dict) -> Dict:
         """Process a single SWE-bench instance."""
@@ -140,8 +145,12 @@ class CodeSWEAgent:
             prompt = self.prompt_formatter.format_for_cli(instance)
 
             os.chdir(repo_path)
-            subprocess.run(["git", "add", "-A"], capture_output=True)
-            subprocess.run(["git", "stash"], capture_output=True)
+            using_prebuilt = Path(repo_path).resolve().parent == Path("/tmp/testbed_host")
+            if not using_prebuilt:
+                subprocess.run(["git", "add", "-A"], capture_output=True)
+                subprocess.run(["git", "stash"], capture_output=True)
+            else:
+                os.environ["PYTHONPATH"] = f"{repo_path}:{os.environ.get('PYTHONPATH','')}"
 
             model_info = f" with model {self.model_alias}" if self.model else ""
             print(f"Running {self.backend.title()} Code{model_info}...")
@@ -150,7 +159,6 @@ class CodeSWEAgent:
 
             if not result["success"]:
                 print(f"{self.backend.title()} Code execution failed: {result['stderr']}")
-                # os.chdir(original_dir)
                 # return {
                 #     "instance_id": instance_id,
                 #     "model": self.model_alias or f"{self.backend}-code",
@@ -189,7 +197,8 @@ class CodeSWEAgent:
             except Exception as e:
                 print(f"Warning: Could not restore directory: {e}")
 
-            if repo_path and os.path.exists(repo_path):
+            using_prebuilt = Path(repo_path).resolve().parent == Path("/tmp/testbed_host")
+            if repo_path and os.path.exists(repo_path) and not using_prebuilt:
                 shutil.rmtree(repo_path)
     def _save_result(self, instance_id: str, result: Dict, patch: str):
         """Save detailed results for debugging."""

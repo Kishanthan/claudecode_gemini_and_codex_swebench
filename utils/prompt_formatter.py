@@ -55,7 +55,7 @@ Base directory: {base_path}
         instance_id = instance.get("instance_id", "")
         
         # Format the prompt
-        base_path = Path(tempfile.gettempdir()) / f"swe_bench_{instance_id}"
+        base_path = instance.get("repo_path", f"/tmp/testbed/{instance_id}")  # Default path if not set
 
         prompt = self.base_template.format(
             repo_name=repo_name,

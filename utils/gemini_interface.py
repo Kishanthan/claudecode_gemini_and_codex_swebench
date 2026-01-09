@@ -18,7 +18,13 @@ class GeminiCodeInterface:
                 "Gemini CLI not found. Please ensure 'gemini' is installed and in PATH"
             )
 
-    def execute_code_cli(self, prompt: str, cwd: str, model: str = None) -> Dict[str, any]:
+    def execute_code_cli(
+        self,
+        prompt: str,
+        cwd: str,
+        model: str = None,
+        trajectory_name: str = None,
+    ) -> Dict[str, any]:
         """Execute Gemini via CLI and capture the response.
 
         Args:

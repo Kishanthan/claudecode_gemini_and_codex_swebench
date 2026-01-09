@@ -9,9 +9,9 @@ import json
 from typing import Dict, List, Optional
 
 
-DEFAULT_ROUTER_TIMEOUT_SECONDS = 1800
-DEFAULT_ROUTER_MAX_ITERATIONS: Optional[int] = None  # Disabled by default
-DEFAULT_ROUTER_MAX_RETRIES: int = 3
+DEFAULT_ROUTER_TIMEOUT_SECONDS = 10800
+DEFAULT_ROUTER_MAX_ITERATIONS: Optional[int] = 100  # Disabled by default
+DEFAULT_ROUTER_MAX_RETRIES: int = 1
 DEFAULT_ROUTER_TRAJECTORIES_DIR = Path.home() / ".claude-code-router" / "logs" / "trajectories"
 
 
@@ -74,9 +74,6 @@ class RouterCodeInterface:
             # Run through router-managed Claude Code; --print for non-interactive use.
             # Default to bypass permissions; override via ROUTER_CODE_FLAGS if needed.
             extra_flags = ["--dangerously-skip-permissions"]
-            flags_str = os.environ.get("ROUTER_CODE_FLAGS")
-            if flags_str is not None:
-                extra_flags = shlex.split(flags_str) if flags_str else []
 
             traj_name = trajectory_name or os.environ.get("ROUTER_TRAJECTORY_NAME", "").strip() or None
 
@@ -84,7 +81,8 @@ class RouterCodeInterface:
             trace_log_name = traj_name or "trace"
             trace_args = ["--trace", "--trace-log", trace_log_name]
 
-            cmd = ["ccr", "code", "--print", *trace_args, *extra_flags]
+            cmd = ["ccr", "code", *trace_args, *extra_flags, "--print"]
+            print(f"Running ccr command: {' '.join(cmd)}")
 
             # Default time/iteration limits. Add retries on timeout.
             timeout_s = _get_int_env("ROUTER_TIMEOUT_SECONDS", DEFAULT_ROUTER_TIMEOUT_SECONDS)

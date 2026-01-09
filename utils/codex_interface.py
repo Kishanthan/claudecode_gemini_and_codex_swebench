@@ -18,7 +18,13 @@ class CodexCodeInterface:
                 "Codex CLI not found. Please ensure 'codex' is installed and in PATH"
             )
 
-    def execute_code_cli(self, prompt: str, cwd: str, model: str = None) -> Dict[str, any]:
+    def execute_code_cli(
+        self,
+        prompt: str,
+        cwd: str,
+        model: str = None,
+        trajectory_name: str = None,
+    ) -> Dict[str, any]:
         """Execute Codex via CLI and capture the response."""
         try:
             original_cwd = os.getcwd()

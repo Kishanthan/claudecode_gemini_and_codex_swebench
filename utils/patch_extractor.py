@@ -33,19 +33,30 @@ class PatchExtractor:
                 text=True
             )
             
-            # Get the diff against HEAD to capture all changes
+            # Get the diff against HEAD to capture all changes (exclude conda_env)
             result = subprocess.run(
-                ["git", "diff", "HEAD", "--no-color", "--no-ext-diff"],
+                [
+                    "git",
+                    "diff",
+                    "HEAD",
+                    "--no-color",
+                    "--no-ext-diff",
+                    "--",
+                    ".",
+                    ":(exclude)conda_env/**",
+                ],
                 capture_output=True,
-                text=True
+                text=False
             )
-            
+            stdout_bytes = result.stdout or b""
+            stderr_bytes = result.stderr or b""
+
             os.chdir(original_cwd)
-            
+
             if result.returncode == 0:
-                return result.stdout
+                return stdout_bytes.decode("utf-8", errors="replace")
             else:
-                print(f"Git diff failed: {result.stderr}")
+                print(f"Git diff failed: {stderr_bytes.decode('utf-8', errors='replace')}")
                 return ""
                 
         except Exception as e:
