@@ -22,6 +22,7 @@ class PromptFormatter:
         return """You are being evaluated on SWE-bench. You have access to a repository with a software issue that needs to be fixed.
 
 Repository: {repo_name}
+Cloned path: {base_path}
 Issue: {issue_title}
 
 Issue Description:
@@ -29,7 +30,7 @@ Issue Description:
 
 Your task:
 1. Understand the issue by carefully reading the description
-2. Search the codebase to find relevant files using grep, find, or other search tools
+2. Search the codebase in cloned path to find relevant files using grep, find, or other search tools
 3. Analyze the code to understand the root cause
 4. Generate a fix that resolves the issue
 5. Ensure your fix doesn't break existing functionality
@@ -40,7 +41,6 @@ Important notes:
 - The tests should pass after applying your fix
 - Output clear file edits showing exactly what needs to be changed
 
-Base directory: {base_path}
 """
     
     def format_issue(self, instance: Dict) -> str:

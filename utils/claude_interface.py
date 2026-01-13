@@ -62,17 +62,6 @@ class ClaudeCodeInterface:
                         trace_path = instance_trace_dir
                     else:
                         trace_path.mkdir(parents=True, exist_ok=True)
-                    link_path = Path(cwd) / ".claude-trace"
-                    if link_path.is_symlink():
-                        current_target = Path(os.readlink(link_path)).resolve()
-                        if current_target != trace_path:
-                            link_path.unlink()
-                    elif link_path.exists():
-                        # If a real directory already exists, leave it in place.
-                        trace_path = link_path.resolve()
-                        instance_trace_dir = trace_path
-                    if not link_path.exists():
-                        link_path.symlink_to(trace_path)
 
             # Build command with optional model parameter
             if self.use_trace:
@@ -81,18 +70,20 @@ class ClaudeCodeInterface:
                     "--include-all-requests",
                     "--run-with",
                     "--dangerously-skip-permissions",
+                    "--print",
+                    prompt,
                 ]
                 if model:
                     cmd.extend(["--model", model])
             else:
-                cmd = ["claude", "--dangerously-skip-permissions"]
+                cmd = ["claude", "--dangerously-skip-permissions", "--print", prompt]
                 if model:
                     cmd.extend(["--model", model])
 
-            # Execute claude command with the prompt via stdin
+            # Execute claude command
             result = subprocess.run(
                 cmd,
-                input=prompt,
+                cwd=cwd,
                 capture_output=True,
                 text=True,
                 timeout=600,  # 10 minute timeout

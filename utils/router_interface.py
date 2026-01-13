@@ -76,6 +76,36 @@ class RouterCodeInterface:
             extra_flags = ["--dangerously-skip-permissions"]
 
             traj_name = trajectory_name or os.environ.get("ROUTER_TRAJECTORY_NAME", "").strip() or None
+            if traj_name:
+                try:
+                    env = os.environ.copy()
+                    env["NON_INTERACTIVE_MODE"] = "true"
+                    result = subprocess.run(
+                        ["ccr", "restart", "--trajectory-name", traj_name],
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
+                        env=env,
+                        cwd=cwd
+                    )
+                    if result.stdout:
+                        print(result.stdout.strip())
+                    if result.stderr:
+                        print(result.stderr.strip())
+                    status = subprocess.run(
+                        ["ccr", "status"],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                        env=env,
+                        cwd=cwd
+                    )
+                    if status.stdout:
+                        print(status.stdout.strip())
+                    if status.stderr:
+                        print(status.stderr.strip())
+                except Exception as e:
+                    print(f"Warning: failed to restart ccr for {traj_name}: {e}")
 
             trace_args: List[str] = []
             trace_log_name = traj_name or "trace"
@@ -112,6 +142,7 @@ class RouterCodeInterface:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
+                    cwd=cwd
                 )
 
                 assert proc.stdin is not None

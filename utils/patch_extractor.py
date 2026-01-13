@@ -44,6 +44,10 @@ class PatchExtractor:
                     "--",
                     ".",
                     ":(exclude)conda_env/**",
+                    ":(exclude).claude",
+                    ":(exclude).claude/**",
+                    ":(exclude).claude-trace",
+                    ":(exclude).claude-trace/**",
                 ],
                 capture_output=True,
                 text=False

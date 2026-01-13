@@ -66,13 +66,9 @@ class CodeSWEAgent:
     def setup_repository(self, instance: Dict) -> Optional[str]:
         """Set up a repository for testing."""
         instance_id = instance["instance_id"]
-
         # Try to materialize prebuilt SWE-bench testbed into a writable staging dir (host-mounted).
-        prebuilt_root = Path(os.environ.get("SWEB_TESTBED_DIR", "/tmp/testbed_host"))
-        prebuilt_path = prebuilt_root / f"{instance_id}"
+        prebuilt_path = Path(os.environ.get("SWEB_TESTBED_DIR", "/tmp/testbed_host"))
         try:
-            if prebuilt_path.exists():
-                shutil.rmtree(prebuilt_path)
             prebuilt_path.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             print(f"Failed to prepare testbed directory {prebuilt_path}: {e}")
@@ -92,24 +88,44 @@ class CodeSWEAgent:
         def copy_from_image(src: str, dest: Path, label: str) -> bool:
             try:
                 dest.mkdir(parents=True, exist_ok=True)
-                stream_cmd = [docker_bin, "run", "--rm", swe_image, "tar", "-C", src, "-cf", "-", "."]
-                extract_cmd = ["tar", "-C", str(dest), "-xf", "-"]
-                with subprocess.Popen(stream_cmd, stdout=subprocess.PIPE) as proc_in:
-                    result = subprocess.run(
-                        extract_cmd,
-                        stdin=proc_in.stdout,
+                timeout_s = int(os.environ.get("SWEB_COPY_TIMEOUT", "300"))
+                print(f"Copying {label} from {swe_image} into {dest}...")
+                create_cmd = [docker_bin, "create", "--network=none", swe_image]
+                try:
+                    create = subprocess.run(
+                        create_cmd,
                         capture_output=True,
                         text=True,
-                        timeout=300,
+                        timeout=timeout_s,
                     )
-                    if proc_in.wait() != 0:
-                        err = proc_in.stderr.read() if proc_in.stderr else ""
-                        print(f"Failed to stream {label} from {swe_image}: {err}")
-                        return False
+                except subprocess.TimeoutExpired:
+                    print(f"Timed out creating container for {swe_image} after {timeout_s}s")
+                    return False
+                if create.returncode != 0:
+                    print(f"Failed to create container for {swe_image}: {create.stderr.strip()}")
+                    return False
+                container_id = create.stdout.strip()
+                try:
+                    cp_cmd = [docker_bin, "cp", f"{container_id}:{src}/.", str(dest)]
+                    result = subprocess.run(
+                        cp_cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout_s,
+                    )
                     if result.returncode != 0:
-                        print(f"Failed to extract {label} for {swe_image}: {result.stderr.strip()}")
+                        print(f"Failed to copy {label} from {swe_image}: {result.stderr.strip()}")
                         return False
-                return True
+                    return True
+                except subprocess.TimeoutExpired:
+                    print(f"Timed out copying {label} from {swe_image} after {timeout_s}s")
+                    return False
+                finally:
+                    subprocess.run(
+                        [docker_bin, "rm", "-f", container_id],
+                        capture_output=True,
+                        text=True,
+                    )
             except Exception as e:
                 print(f"Error running docker cmd to copy {label}: {e}")
                 return False
@@ -117,10 +133,26 @@ class CodeSWEAgent:
         if not copy_from_image("/testbed", prebuilt_path, "testbed"):
             return None
 
+        env_root = Path("/tmp/conda_envs")
+        env_path = env_root / instance_id
+        if not copy_from_image("/opt/miniconda3/envs/testbed", env_path, "conda env"):
+            return None
+
         # Confirm contents exist
         if not any(prebuilt_path.iterdir()):
             print(f"{prebuilt_path} is empty after copying from {swe_image}")
             return None
+        if not (env_path / "bin").exists():
+            print(f"{env_path} does not contain a usable conda env from {swe_image}")
+            return None
+        try:
+            subprocess.run(
+                ["git", "config", "--global", "--add", "safe.directory", str(prebuilt_path)],
+                capture_output=True,
+                text=True,
+            )
+        except Exception as e:
+            print(f"Warning: could not mark {prebuilt_path} as safe for git: {e}")
 
         instance["repo_path"] = str(prebuilt_path)
         return str(prebuilt_path)
@@ -145,13 +177,31 @@ class CodeSWEAgent:
             prompt = self.prompt_formatter.format_for_cli(instance)
 
             os.chdir(repo_path)
-            using_prebuilt = Path(repo_path).resolve().parent == Path("/tmp/testbed_host")
+            using_prebuilt = Path(repo_path).resolve() == Path("/tmp/testbed_host")
             if not using_prebuilt:
                 subprocess.run(["git", "add", "-A"], capture_output=True)
                 subprocess.run(["git", "stash"], capture_output=True)
             else:
-                os.environ["PYTHONPATH"] = f"{repo_path}:{os.environ.get('PYTHONPATH','')}"
-
+                conda_bin = Path("/tmp/conda_envs") / instance_id / "bin"
+                if conda_bin.exists():
+                    os.environ["PATH"] = f"{conda_bin}:{os.environ.get('PATH','')}"
+                    os.environ["CONDA_PREFIX"] = str(conda_bin.parent)
+                    os.environ["CONDA_DEFAULT_ENV"] = "testbed"
+                    os.environ["PYTHONPATH"] = f"{repo_path}:{os.environ.get('PYTHONPATH','')}"
+                    base_activate = Path("/opt/miniconda3/bin/activate")
+                    if base_activate.exists():
+                        os.environ["PATH"] = f"{base_activate.parent}:{os.environ.get('PATH','')}"
+                        result = subprocess.run(
+                            ["bash", "-lc", f"source '{base_activate}' '{conda_bin.parent}' && env"],
+                            capture_output=True,
+                            text=True,
+                        )
+                        if result.returncode == 0:
+                            for line in result.stdout.splitlines():
+                                if "=" in line:
+                                    key, val = line.split("=", 1)
+                                    os.environ[key] = val
+            os.chdir(repo_path)
             model_info = f" with model {self.model_alias}" if self.model else ""
             print(f"Running {self.backend.title()} Code{model_info}...")
             trajectory_name = instance_id
@@ -197,7 +247,7 @@ class CodeSWEAgent:
             except Exception as e:
                 print(f"Warning: Could not restore directory: {e}")
 
-            using_prebuilt = Path(repo_path).resolve().parent == Path("/tmp/testbed_host")
+            using_prebuilt = Path(repo_path).resolve() == Path("/tmp/testbed_host")
             if repo_path and os.path.exists(repo_path) and not using_prebuilt:
                 shutil.rmtree(repo_path)
     def _save_result(self, instance_id: str, result: Dict, patch: str):
