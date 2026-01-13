@@ -197,7 +197,10 @@ class RouterCodeInterface:
                                     obj = json.loads(line)
                                 except Exception:
                                     continue
-                                if obj.get("stage") == "request":
+                                stage = obj.get("stage")
+                                if stage is None:
+                                    stage = obj.get("request", {}).get("stage")
+                                if stage == "request":
                                     request_count += 1
                             file_offset = f.tell()
                     except FileNotFoundError:

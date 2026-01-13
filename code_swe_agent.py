@@ -50,16 +50,19 @@ class CodeSWEAgent:
         self.prompt_formatter = PromptFormatter(prompt_template)
         self.patch_extractor = PatchExtractor()
         self.base_dir = Path.cwd()
-        self.results_dir = self.base_dir / "results"
-        self.predictions_dir = self.base_dir / "predictions"
+        output_root = Path(
+            os.environ.get("CODE_SWE_OUTPUT_DIR", "/opt/swebench_outputs")
+        )
+        self.results_dir = output_root / "results"
+        self.predictions_dir = output_root / "predictions"
 
         # Resolve model name from alias
         self.model = get_model_name(model, self.backend) if model else None
         self.model_alias = model  # Keep original alias for logging
 
         # Create directories if they don't exist
-        self.results_dir.mkdir(exist_ok=True)
-        self.predictions_dir.mkdir(exist_ok=True)
+        self.results_dir.mkdir(parents=True, exist_ok=True)
+        self.predictions_dir.mkdir(parents=True, exist_ok=True)
         self.pred_timestamp: Optional[str] = None
         self.pred_file: Optional[Path] = None
 
