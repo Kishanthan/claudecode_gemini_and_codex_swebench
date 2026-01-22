@@ -60,7 +60,8 @@ class RouterCodeInterface:
           lines in the trajectory log) by terminating the process (default: disabled).
         - `ROUTER_TRAJECTORIES_DIR`: where to watch for `session-*.jsonl`
           (default `{DEFAULT_ROUTER_TRAJECTORIES_DIR}`).
-        - `ROUTER_CODE_FLAGS`: extra flags for `ccr code` (default `--dangerously-skip-permissions`).
+        - `ROUTER_CODE_FLAGS`: extra flags for `ccr code` (space-separated).
+        - `ROUTER_ALLOW_WEB_TOOLS`: if truthy, append `--allow-web-tools`.
         - `ROUTER_TRAJECTORY_NAME`: optional trajectory name to help select the right session log (prefix match)
         """
         original_cwd = os.getcwd()
@@ -72,8 +73,13 @@ class RouterCodeInterface:
                 routed_prompt = f"/model {model}\n\n{prompt}"
 
             # Run through router-managed Claude Code; --print for non-interactive use.
-            # Default to bypass permissions; override via ROUTER_CODE_FLAGS if needed.
+            # Default to bypass permissions; allow additional flags via env.
             extra_flags = ["--dangerously-skip-permissions"]
+            if os.environ.get("ROUTER_ALLOW_WEB_TOOLS", "").strip().lower() in {"1", "true", "yes", "on"}:
+                extra_flags.append("--allow-web-tools")
+            code_flags = os.environ.get("ROUTER_CODE_FLAGS", "").strip()
+            if code_flags:
+                extra_flags.extend(shlex.split(code_flags))
 
             traj_name = trajectory_name or os.environ.get("ROUTER_TRAJECTORY_NAME", "").strip() or None
             if traj_name:

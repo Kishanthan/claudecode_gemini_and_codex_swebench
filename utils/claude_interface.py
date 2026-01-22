@@ -13,7 +13,8 @@ class ClaudeCodeInterface:
     def __init__(self):
         """Ensure the Claude CLI is available on the system."""
         try:
-            self.use_trace = os.environ.get("CLAUDE_TRACE", "true").strip().lower() in {"1", "true", "yes"}
+            self.use_trace = os.environ.get("ENABLE_CLAUDE_TRACE", "true").strip().lower() in {"1", "true", "yes"}
+            self.enable_stream_output = os.environ.get("ENABLE_CLAUDE_STREAM_OUTPUT", "true").strip().lower() in {"1", "true", "yes"}
             cli = "claude-trace" if self.use_trace else "claude"
             result = subprocess.run([
                 cli, "--version"
@@ -48,37 +49,40 @@ class ClaudeCodeInterface:
             # Change to the working directory
             os.chdir(cwd)
 
-            instance_trace_dir = None
-            if self.use_trace:
-                trace_dir = os.environ.get(
-                    "CLAUDE_TRACE_DIR",
-                    str(Path.home() / ".claude-trace"),
-                )
-                if trace_dir:
-                    trace_path = Path(trace_dir).resolve()
-                    if trajectory_name:
-                        instance_trace_dir = trace_path / trajectory_name
-                        instance_trace_dir.mkdir(parents=True, exist_ok=True)
-                        trace_path = instance_trace_dir
-                    else:
-                        trace_path.mkdir(parents=True, exist_ok=True)
-
             # Build command with optional model parameter
             if self.use_trace:
+                trace_log_name = trajectory_name or "trace"
                 cmd = [
                     "claude-trace",
+                    "--log",
+                    trace_log_name,
                     "--include-all-requests",
                     "--run-with",
-                    "--dangerously-skip-permissions",
-                    "--print",
-                    prompt,
                 ]
+                if self.enable_stream_output:
+                    cmd.extend(
+                        [
+                            "--output-format",
+                            "stream-json",
+                            "--include-partial-messages",
+                            "--verbose",
+                        ]
+                    )
+                cmd.extend(
+                    [
+                        "--dangerously-skip-permissions",
+                        "--print",
+                        prompt,
+                    ]
+                )
                 if model:
                     cmd.extend(["--model", model])
             else:
                 cmd = ["claude", "--dangerously-skip-permissions", "--print", prompt]
                 if model:
                     cmd.extend(["--model", model])
+
+            print(f"Running claude command (cwd={cwd}): {' '.join(cmd)}")
 
             # Execute claude command
             result = subprocess.run(
@@ -89,11 +93,11 @@ class ClaudeCodeInterface:
                 timeout=600,  # 10 minute timeout
             )
 
+            if result.stdout:
+                print(result.stdout.strip())
+
             # Restore original directory
             os.chdir(original_cwd)
-
-            if instance_trace_dir and trajectory_name:
-                self._rename_latest_trace(instance_trace_dir, trajectory_name)
 
             return {
                 "success": result.returncode == 0,
@@ -118,24 +122,6 @@ class ClaudeCodeInterface:
                 "stderr": str(e),
                 "returncode": -1,
             }
-
-    def _rename_latest_trace(self, trace_dir: Path, trajectory_name: str) -> None:
-        """Rename the latest claude-trace log files to include the instance id."""
-        try:
-            candidates = sorted(trace_dir.glob("log-*.jsonl"))
-            if candidates:
-                latest = max(candidates, key=lambda p: p.stat().st_mtime)
-                target = trace_dir / f"{trajectory_name}.jsonl"
-                if latest != target:
-                    latest.rename(target)
-            html_candidates = sorted(trace_dir.glob("log-*.html"))
-            if html_candidates:
-                latest_html = max(html_candidates, key=lambda p: p.stat().st_mtime)
-                html_target = trace_dir / f"{trajectory_name}.html"
-                if latest_html != html_target:
-                    latest_html.rename(html_target)
-        except Exception:
-            return
 
     def extract_file_changes(self, response: str) -> List[Dict[str, str]]:
         """Extract file changes from Claude's response."""
