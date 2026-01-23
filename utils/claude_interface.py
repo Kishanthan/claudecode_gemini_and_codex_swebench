@@ -50,6 +50,10 @@ class ClaudeCodeInterface:
             os.chdir(cwd)
 
             # Build command with optional model parameter
+            prompt_mode = os.environ.get("CODE_SWE_PROMPT_MODE", "").strip().lower()
+            permission_mode_flag = (
+                ["--permission-mode", "plan"] if prompt_mode == "plan" else []
+            )
             if self.use_trace:
                 trace_log_name = trajectory_name or "trace"
                 cmd = [
@@ -68,17 +72,24 @@ class ClaudeCodeInterface:
                             "--verbose",
                         ]
                     )
+                if model:
+                    cmd.extend(["--model", model])
                 cmd.extend(
                     [
                         "--dangerously-skip-permissions",
+                        *permission_mode_flag,
                         "--print",
                         prompt,
                     ]
                 )
-                if model:
-                    cmd.extend(["--model", model])
             else:
-                cmd = ["claude", "--dangerously-skip-permissions", "--print", prompt]
+                cmd = [
+                    "claude",
+                    "--dangerously-skip-permissions",
+                    *permission_mode_flag,
+                    "--print",
+                    prompt,
+                ]
                 if model:
                     cmd.extend(["--model", model])
 

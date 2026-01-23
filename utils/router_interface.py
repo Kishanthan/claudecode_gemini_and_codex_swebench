@@ -75,6 +75,9 @@ class RouterCodeInterface:
             # Run through router-managed Claude Code; --print for non-interactive use.
             # Default to bypass permissions; allow additional flags via env.
             extra_flags = ["--dangerously-skip-permissions"]
+            prompt_mode = os.environ.get("CODE_SWE_PROMPT_MODE", "").strip().lower()
+            if prompt_mode == "plan":
+                extra_flags.extend(["--permission-mode", "plan"])
             if os.environ.get("ROUTER_ALLOW_WEB_TOOLS", "").strip().lower() in {"1", "true", "yes", "on"}:
                 extra_flags.append("--allow-web-tools")
             code_flags = os.environ.get("ROUTER_CODE_FLAGS", "").strip()

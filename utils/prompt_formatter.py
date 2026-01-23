@@ -63,7 +63,8 @@ Issue: {issue_title}
 
 Your task:
 - You are the planner. Produce a concise execution plan (max 8 bullets) to fix this issue.
-- Do NOT edit files or run tools; only return the plan bullets
+- Do NOT edit files; only return the plan bullets.
+- Save the plan as /opt/claude_plans/{instance_id}.md.
 
 Important rules:
 - Do NOT implement a fix
