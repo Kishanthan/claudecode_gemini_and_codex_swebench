@@ -85,7 +85,8 @@ class RouterCodeInterface:
                 extra_flags.extend(shlex.split(code_flags))
 
             traj_name = trajectory_name or os.environ.get("ROUTER_TRAJECTORY_NAME", "").strip() or None
-            if traj_name:
+            skip_restart = os.environ.get("ROUTER_SKIP_RESTART", "").strip().lower() in {"1", "true", "yes", "on"}
+            if traj_name and not skip_restart:
                 try:
                     env = os.environ.copy()
                     env["NON_INTERACTIVE_MODE"] = "true"
@@ -122,6 +123,10 @@ class RouterCodeInterface:
 
             cmd = ["ccr", "code", *trace_args, *extra_flags, "--print"]
             print(f"Running ccr command: {' '.join(cmd)}")
+            prompt_lines = routed_prompt.splitlines()[:10]
+            if prompt_lines:
+                print("Prompt preview (first 10 lines):")
+                print("\n".join(prompt_lines))
 
             # Default time/iteration limits. Add retries on timeout.
             timeout_s = _get_int_env("ROUTER_TIMEOUT_SECONDS", DEFAULT_ROUTER_TIMEOUT_SECONDS)

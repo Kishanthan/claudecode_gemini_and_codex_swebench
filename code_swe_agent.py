@@ -50,10 +50,13 @@ class CodeSWEAgent:
             self.backend = "claude"
             self.interface = ClaudeCodeInterface()
 
+        prompt_template_path = prompt_template or os.environ.get(
+            "CODE_SWE_PROMPT_TEMPLATE"
+        )
         plan_template = os.environ.get("CODE_SWE_PLAN_TEMPLATE")
         self.prompt_mode = os.environ.get("CODE_SWE_PROMPT_MODE", "fix").strip().lower()
         self.prompt_formatter = PromptFormatter(
-            prompt_template_path=prompt_template,
+            prompt_template_path=prompt_template_path,
             plan_template_path=plan_template,
         )
         self.patch_extractor = PatchExtractor()
@@ -81,6 +84,15 @@ class CodeSWEAgent:
     def setup_repository(self, instance: Dict) -> Optional[str]:
         """Set up a repository for testing."""
         instance_id = instance["instance_id"]
+        dataset_name = os.environ.get("DATASET", "").lower()
+        testbed_mode = os.environ.get("SWEB_TESTBED_MODE", "").strip().lower()
+        direct_testbed = (
+            testbed_mode == "direct"
+            or "swe-rebench" in dataset_name
+            or bool(instance.get("docker_image") or instance.get("image_name"))
+        )
+        if direct_testbed:
+            return os.environ.get("SWEB_TESTBED_DIR", "/testbed")
         # Try to materialize prebuilt SWE-bench testbed into a writable staging dir (host-mounted).
         prebuilt_path = Path(os.environ.get("SWEB_TESTBED_DIR", "/tmp/testbed_host"))
         try:
@@ -102,6 +114,13 @@ class CodeSWEAgent:
 
         def copy_from_image(src: str, dest: Path, label: str) -> bool:
             try:
+                # Ensure destination is empty to avoid docker cp failures.
+                if dest.exists():
+                    subprocess.run(
+                        ["rm", "-rf", str(dest)],
+                        capture_output=True,
+                        text=True,
+                    )
                 dest.mkdir(parents=True, exist_ok=True)
                 timeout_s = int(os.environ.get("SWEB_COPY_TIMEOUT", "300"))
                 print(f"Copying {label} from {swe_image} into {dest}...")
@@ -210,11 +229,12 @@ class CodeSWEAgent:
                 prompt = self.prompt_formatter.format_plan(instance)
             else:
                 task_block_text = None
-                plan_path = (
-                    Path(plan_input_dir) / f"{instance_id}.txt"
-                    if plan_input_dir
-                    else None
-                )
+                plan_path = None
+                if plan_input_dir:
+                    plan_dir = Path(plan_input_dir)
+                    md_path = plan_dir / f"{instance_id}.md"
+                    txt_path = plan_dir / f"{instance_id}.txt"
+                    plan_path = md_path if md_path.exists() else txt_path
                 has_plan = bool(plan_path and plan_path.exists())
                 if has_plan and plan_path:
                     try:
@@ -237,6 +257,17 @@ class CodeSWEAgent:
                     prompt = self.prompt_formatter.format_issue(
                         instance,
                     )
+
+            prompt_dump_dir = os.environ.get("CODE_SWE_PROMPT_DUMP_DIR", "").strip()
+            if prompt_dump_dir:
+                try:
+                    dump_path = Path(prompt_dump_dir)
+                    dump_path.mkdir(parents=True, exist_ok=True)
+                    prompt_file = dump_path / f"{instance_id}.txt"
+                    prompt_file.write_text(prompt + "\n", encoding="utf-8")
+                    print(f"Wrote prompt for {instance_id} to {prompt_file}")
+                except Exception as e:
+                    print(f"Warning: could not write prompt dump: {e}")
 
             os.chdir(repo_path)
             using_prebuilt = Path(repo_path).resolve() == Path("/tmp/testbed_host")
@@ -305,10 +336,48 @@ class CodeSWEAgent:
                 result["stdout"], repo_path
             )
 
+            cli_dump_dir = os.environ.get("CODE_SWE_CLI_OUTPUT_DUMP_DIR", "").strip()
+            if cli_dump_dir:
+                try:
+                    dump_root = Path(cli_dump_dir)
+                    dump_root.mkdir(parents=True, exist_ok=True)
+                    (dump_root / f"{instance_id}.stdout.txt").write_text(
+                        result.get("stdout", "") or "", encoding="utf-8"
+                    )
+                    (dump_root / f"{instance_id}.stderr.txt").write_text(
+                        result.get("stderr", "") or "", encoding="utf-8"
+                    )
+                    (dump_root / f"{instance_id}.meta.json").write_text(
+                        json.dumps(
+                            {
+                                "returncode": result.get("returncode"),
+                                "success": result.get("success"),
+                            },
+                            indent=2,
+                        )
+                        + "\n",
+                        encoding="utf-8",
+                    )
+                    print(f"Wrote CLI output for {instance_id} to {dump_root}")
+                except Exception as e:
+                    print(f"Warning: could not write CLI output dump: {e}")
+
             is_valid, error = self.patch_extractor.validate_patch(patch)
             if not is_valid:
                 print(f"Invalid patch: {error}")
                 patch = ""
+
+            if not patch and os.environ.get(
+                "CODE_SWE_PRINT_CLI_OUTPUT", ""
+            ).strip().lower() in {"1", "true", "yes"}:
+                stdout = (result.get("stdout") or "").strip()
+                stderr = (result.get("stderr") or "").strip()
+                if stdout:
+                    print("CLI stdout (truncated):")
+                    print(stdout[:4000])
+                if stderr:
+                    print("CLI stderr (truncated):")
+                    print(stderr[:4000])
 
             prediction = self.patch_extractor.format_for_swebench(
                 patch, instance_id, self.model_alias or f"{self.backend}-code"

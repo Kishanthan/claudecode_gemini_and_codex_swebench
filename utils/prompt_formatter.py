@@ -1,3 +1,4 @@
+import os
 import tempfile
 from pathlib import Path
 from typing import Dict, Optional
@@ -26,7 +27,7 @@ class PromptFormatter:
                 pass
 
         # Default template if no file provided
-        return """You are being evaluated on SWE-bench. You have access to a repository with a software issue that needs to be fixed.
+        return """You have access to a repository with a software issue that needs to be fixed.
 
 Repository: {repo_name}
 Cloned path: {base_path}
@@ -55,7 +56,7 @@ Important notes:
             except FileNotFoundError:
                 pass
 
-        return """You are being evaluated on SWE-bench. You have access to a repository with a software issue.
+        return """You have access to a repository with a software issue.
 
 Repository: {repo_name}
 Cloned path: {base_path}
@@ -78,31 +79,6 @@ Issue Description:
 {issue_description}
 
 """
-
-    #         return """You are being evaluated on SWE-bench. You have access to a repository with a software issue that needs to be fixed.
-
-    # Repository: {repo_name}
-    # Cloned path: {base_path}
-    # Issue: {issue_title}
-
-    # Your task:
-    # 1. Understand the issue by carefully reading the description
-    # 2. Search the codebase in cloned path to find relevant files using grep, find, or other search tools
-    # 3. Analyze the code to understand the root cause
-    # 4. Produce a clear plan with no more than 10 bullet points
-
-    # Important rules:
-    # - Do NOT implement a fix
-    # - Do NOT propose code changes
-    # - Do NOT suggest files to edit
-    # - Do NOT write patches or edits
-
-    # Issue Description:
-    # {issue_description}
-
-    # - For each step, include which tools are likely needed (e.g., Bash, Read, Grep, Glob)
-    # - Keep the plan under 10 bullet points
-    # """
 
     def format_issue(
         self,
@@ -129,8 +105,14 @@ Issue Description:
         """Format a SWE-bench instance into a prompt using the given template."""
         # Extract key information from the instance
         repo_name = instance.get("repo", "")
-        issue_title = instance.get("problem_statement", "").split("\n")[0]
-        issue_description = instance.get("problem_statement", "")
+        problem_statement = instance.get("problem_statement", "") or ""
+        issue_title = (
+            instance.get("issue_title")
+            or problem_statement.split("\n")[0]
+            if problem_statement
+            else ""
+        )
+        issue_description = instance.get("issue_body") or problem_statement
         base_commit = instance.get("base_commit", "")
 
         # Get instance_id for tracking
@@ -138,8 +120,11 @@ Issue Description:
 
         # Format the prompt
         base_path = instance.get(
-            "repo_path", f"/tmp/testbed/{instance_id}"
-        )  # Default path if not set
+            "repo_path",
+            os.environ.get("SWEB_TESTBED_DIR")
+            or os.environ.get("REPO_PATH")
+            or f"/tmp/testbed/{instance_id}",
+        )
 
         default_task_block = (
             "1. Understand the issue by carefully reading the description\n"
